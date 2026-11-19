@@ -1,0 +1,596 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>영상 퀴즈 도우미</title>
+<style>
+  :root {
+    --bg: #f5f4f0;
+    --card: #ffffff;
+    --ink: #1f1d1a;
+    --muted: #716d66;
+    --line: #e4e1da;
+    --accent: #2f5d50;
+    --accent-ink: #ffffff;
+    --accent-soft: #e6efeb;
+    --warn: #8a5a00;
+    --warn-soft: #fbf0d9;
+    --bad: #a3321f;
+    --bad-soft: #fbe6e1;
+    --radius: 12px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #161714; --card: #1f201d; --ink: #ecebe6; --muted: #9b988f; --line: #33342f;
+      --accent: #7fb9a6; --accent-ink: #10201a; --accent-soft: #24332d;
+      --warn: #e6b955; --warn-soft: #382d12; --bad: #f08a77; --bad-soft: #3b1f1a;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font: 16px/1.6 "Pretendard", "Apple SD Gothic Neo", "Malgun Gothic", system-ui, sans-serif;
+  }
+  main { max-width: 760px; margin: 0 auto; padding: 32px 18px 80px; }
+  h1 { font-size: 26px; margin: 0 0 4px; letter-spacing: -0.02em; }
+  h2 { font-size: 17px; margin: 0 0 14px; }
+  .sub { color: var(--muted); margin: 0 0 24px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 20px; margin-bottom: 16px; }
+  .tabs { display: flex; gap: 6px; margin-bottom: 14px; }
+  .tab { border: 1px solid var(--line); background: transparent; color: var(--muted); padding: 7px 14px; border-radius: 999px; cursor: pointer; font: inherit; font-size: 14px; }
+  .tab[aria-selected="true"] { background: var(--accent-soft); color: var(--accent); border-color: var(--accent); font-weight: 600; }
+  label.f { display: block; font-size: 13px; color: var(--muted); margin: 12px 0 4px; }
+  input[type=text], input[type=url], input[type=number], select, textarea {
+    width: 100%; font: inherit; color: var(--ink); background: var(--bg);
+    border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px;
+  }
+  textarea { min-height: 170px; resize: vertical; }
+  input:focus, select:focus, textarea:focus, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .row { display: flex; gap: 10px; align-items: end; flex-wrap: wrap; }
+  .row > * { flex: 1; min-width: 150px; }
+  .check { display: flex; gap: 8px; align-items: center; font-size: 14px; color: var(--muted); margin-top: 10px; }
+  button.primary {
+    background: var(--accent); color: var(--accent-ink); border: 0; border-radius: 8px;
+    padding: 11px 18px; font: inherit; font-weight: 600; cursor: pointer; margin-top: 14px;
+  }
+  button.primary:disabled { opacity: .5; cursor: not-allowed; }
+  button.ghost { background: none; border: 0; color: var(--muted); cursor: pointer; font: inherit; font-size: 13px; padding: 4px 6px; border-radius: 6px; }
+  button.ghost:hover { background: var(--accent-soft); color: var(--accent); }
+  .drop { border: 2px dashed var(--line); border-radius: 10px; padding: 22px; text-align: center; color: var(--muted); cursor: pointer; }
+  .drop.over, .drop:hover { border-color: var(--accent); color: var(--accent); }
+  .drop strong { color: var(--ink); }
+  .bar { height: 8px; background: var(--line); border-radius: 99px; overflow: hidden; margin-top: 8px; }
+  .bar > i { display: block; height: 100%; width: 0; background: var(--accent); transition: width .3s; }
+  .progress-msg { font-size: 14px; color: var(--muted); margin-top: 14px; }
+  .notice { border-radius: 8px; padding: 10px 14px; font-size: 14px; margin-bottom: 10px; }
+  .notice.warn { background: var(--warn-soft); color: var(--warn); }
+  .notice.bad { background: var(--bad-soft); color: var(--bad); }
+  .vid { display: flex; align-items: flex-start; gap: 10px; padding: 10px 0; border-top: 1px solid var(--line); }
+  .vid:first-child { border-top: 0; }
+  .vid input { margin-top: 6px; accent-color: var(--accent); }
+  .vid .t { font-weight: 600; word-break: break-all; }
+  .vid .m { font-size: 13px; color: var(--muted); }
+  .vid .grow { flex: 1; min-width: 0; }
+  .empty { color: var(--muted); font-size: 14px; }
+  pre.script { white-space: pre-wrap; background: var(--bg); border-radius: 8px; padding: 12px; font: 13px/1.6 inherit; max-height: 300px; overflow: auto; margin: 8px 0 0; }
+  .ans { border-left: 4px solid var(--accent); }
+  .ans .lab { font-size: 13px; color: var(--muted); }
+  .ans .q { font-size: 14px; color: var(--muted); margin: 2px 0 8px; }
+  .ans .a { font-size: 20px; font-weight: 700; letter-spacing: -0.01em; margin-bottom: 8px; white-space: pre-wrap; }
+  .tags { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
+  .tag { font-size: 12px; padding: 2px 9px; border-radius: 99px; background: var(--accent-soft); color: var(--accent); }
+  .tag.warn { background: var(--warn-soft); color: var(--warn); }
+  .ev { font-size: 14px; margin: 6px 0; padding-left: 10px; border-left: 2px solid var(--line); }
+  .ev .time { font-variant-numeric: tabular-nums; color: var(--accent); font-weight: 600; margin-right: 6px; }
+  .ev .vt { color: var(--muted); font-size: 12px; }
+  .why { font-size: 14px; color: var(--muted); margin-top: 8px; }
+  .hint { font-size: 13px; color: var(--muted); margin-top: 8px; }
+  .guestbar { position: sticky; top: 0; z-index: 5; background: var(--accent); color: var(--accent-ink); border-radius: 10px; padding: 10px 14px; margin-bottom: 14px; font-size: 14px; display: flex; gap: 14px; flex-wrap: wrap; align-items: center; }
+  .guestbar b { font-variant-numeric: tabular-nums; }
+  .guestbar[hidden] { display: none; }
+  .guestbar.low { background: var(--bad); color: #fff; }
+  .blocker { position: fixed; inset: 0; background: rgba(20,20,18,.78); display: grid; place-items: center; z-index: 50; padding: 20px; }
+  .blocker[hidden] { display: none; }
+  .blocker .box { background: var(--card); color: var(--ink); border-radius: 14px; padding: 28px; max-width: 380px; text-align: center; }
+  .blocker h2 { font-size: 20px; margin: 0 0 8px; }
+  textarea.mono { min-height: 110px; font-size: 14px; }
+  .inv { display: flex; gap: 10px; align-items: center; padding: 10px 0; border-top: 1px solid var(--line); flex-wrap: wrap; }
+  .inv:first-child { border-top: 0; }
+  .inv .grow { flex: 1; min-width: 180px; }
+  .inv .t { font-weight: 600; }
+  .inv .m { font-size: 13px; color: var(--muted); }
+  .pill { font-size: 12px; padding: 2px 9px; border-radius: 99px; background: var(--line); color: var(--muted); }
+  .pill.on { background: var(--accent-soft); color: var(--accent); }
+  .pill.wait { background: var(--warn-soft); color: var(--warn); }
+  .picklist { border: 1px solid var(--line); border-radius: 8px; padding: 4px 12px; background: var(--bg); }
+  .picklist label { display: flex; gap: 8px; align-items: center; padding: 6px 0; font-size: 14px; cursor: pointer; }
+  .picklist input { accent-color: var(--accent); }
+</style>
+</head>
+<body>
+<main>
+  <h1>영상 퀴즈 도우미</h1>
+  <p class="sub" id="sub">영상을 넣고 문제를 붙여넣으면, 영상 속 내용을 근거로 정답을 찾아줘요.</p>
+
+  <div id="warnings"></div>
+
+  <div id="guestBar" class="guestbar" hidden></div>
+  <div id="guestNote" class="hint" hidden style="margin:-4px 0 14px"></div>
+
+  <section class="card" id="addCard">
+    <h2>1. 영상 넣기</h2>
+    <div class="tabs" role="tablist">
+      <button class="tab" role="tab" id="tab-file" aria-selected="true">녹화 파일</button>
+      <button class="tab" role="tab" id="tab-yt" aria-selected="false">유튜브 링크</button>
+    </div>
+
+    <div id="pane-file">
+      <div class="drop" id="drop" tabindex="0">
+        <div><strong>영상 파일을 여기로 끌어다 놓거나 눌러서 선택</strong></div>
+        <div style="font-size:13px;margin-top:4px">mp4, mov, mkv, webm, m4a, mp3 등</div>
+        <div id="fileName" style="margin-top:8px;font-size:14px;color:var(--ink)"></div>
+      </div>
+      <input type="file" id="file" accept="video/*,audio/*" hidden>
+      <label class="f" for="fileTitle">제목 (비워두면 파일 이름)</label>
+      <input type="text" id="fileTitle" placeholder="예) 11월 3주차 채플">
+    </div>
+
+    <div id="pane-yt" hidden>
+      <label class="f" for="ytUrl">유튜브 주소</label>
+      <input type="url" id="ytUrl" placeholder="https://www.youtube.com/watch?v=...">
+      <label class="check"><input type="checkbox" id="forceAsr"> 자막이 있어도 음성 인식으로 처리하기 (더 정확하지만 오래 걸려요)</label>
+    </div>
+
+    <div class="row" style="margin-top:12px">
+      <div>
+        <label class="f" for="lang">영상 언어</label>
+        <select id="lang">
+          <option value="ko">한국어</option>
+          <option value="">자동 감지</option>
+          <option value="en">English</option>
+        </select>
+      </div>
+      <div></div>
+    </div>
+
+    <button class="primary" id="addBtn">영상 분석 시작</button>
+    <div id="progress" hidden>
+      <div class="progress-msg" id="progressMsg"></div>
+      <div class="bar"><i id="progressBar"></i></div>
+    </div>
+    <div id="addError" class="notice bad" hidden style="margin-top:12px"></div>
+  </section>
+
+  <section class="card">
+    <h2 id="hVideos">2. 근거로 쓸 영상 고르기</h2>
+    <div id="videos"><div class="empty">아직 넣은 영상이 없어요.</div></div>
+  </section>
+
+  <section class="card">
+    <h2 id="hQuiz">3. 문제 붙여넣기</h2>
+    <textarea id="quiz" placeholder="문제와 보기를 그대로 붙여넣어 주세요. 여러 문제를 한꺼번에 붙여넣어도 돼요."></textarea>
+    <div class="hint">Ctrl + Enter (Mac은 ⌘ + Enter)로도 실행돼요.</div>
+    <button class="primary" id="askBtn">정답 찾기</button>
+    <div id="askError" class="notice bad" hidden style="margin-top:12px"></div>
+  </section>
+
+  <section id="results"></section>
+
+  <section class="card" id="inviteCard" hidden>
+    <h2>친구 초대 <span class="pill">1회용 · 시간 제한</span></h2>
+    <p class="hint" style="margin-top:0">
+      친구에게 1회용 링크를 보내면, 친구가 링크를 열고 <b>시작하기</b>를 누른 순간부터 정한 시간 동안만 쓸 수 있어요.
+      친구는 영상을 올릴 수 없고, 아래에서 고른 영상에 대해서만 문제를 붙여넣어 정답을 받아요.
+      친구가 질문할 때마다 내 API 비용이 드니 횟수를 제한해 두세요. 이 앱이 켜져 있는 동안만 친구가 쓸 수 있어요.
+    </p>
+    <label class="f" for="publicUrl">친구가 접속할 공개 주소</label>
+    <input type="url" id="publicUrl" placeholder="https://xxxx.trycloudflare.com">
+    <div class="hint" id="shareHint"></div>
+    <div class="row">
+      <div><label class="f" for="invLabel">친구 이름 (나만 보는 메모)</label>
+        <input type="text" id="invLabel" placeholder="예) 민수" maxlength="40"></div>
+      <div><label class="f" for="invMin">이용 시간</label>
+        <select id="invMin">
+          <option value="30">30분</option><option value="60" selected>1시간</option>
+          <option value="120">2시간</option><option value="180">3시간</option><option value="1440">24시간</option>
+        </select></div>
+    </div>
+    <div class="row">
+      <div><label class="f" for="invQ">질문 횟수</label><input type="number" id="invQ" value="10" min="1" max="200"></div>
+      <div></div>
+    </div>
+    <label class="f">친구가 문제를 풀 때 쓸 영상 (여기서 고른 영상만 친구에게 보여요)</label>
+    <div id="invVideos" class="picklist"><div class="empty" style="padding:8px 0">위에서 영상을 먼저 넣어 주세요.</div></div>
+    <button class="primary" id="inviteBtn">1회용 링크 만들기</button>
+    <div id="inviteError" class="notice bad" hidden style="margin-top:12px"></div>
+    <div id="inviteResult" hidden style="margin-top:14px">
+      <label class="f" for="inviteMsg">친구에게 이대로 보내세요 (링크는 한 번만 열 수 있어요)</label>
+      <textarea id="inviteMsg" class="mono" readonly></textarea>
+      <button class="primary" id="copyBtn" style="margin-top:8px">복사하기</button>
+    </div>
+    <h2 style="margin-top:24px">초대 목록</h2>
+    <div id="inviteList"><div class="empty">아직 만든 초대가 없어요.</div></div>
+  </section>
+</main>
+
+<div class="blocker" id="blocker" hidden role="alertdialog" aria-labelledby="blockerTitle">
+  <div class="box"><h2 id="blockerTitle">이용할 수 없어요</h2><p id="blockerMsg"></p></div>
+</div>
+
+<script>
+const $ = (s) => document.querySelector(s);
+function el(tag, props = {}, ...kids) {
+  const e = document.createElement(tag);
+  for (const [k, v] of Object.entries(props)) {
+    if (k === 'class') e.className = v;
+    else if (k.startsWith('on')) e.addEventListener(k.slice(2), v);
+    else e.setAttribute(k, v);
+  }
+  for (const k of kids.flat()) if (k != null) e.append(k);
+  return e;
+}
+let ME = null, countdownTimer = null;
+function showBlocker(msg) {
+  clearInterval(countdownTimer);
+  $('#blockerMsg').textContent = msg;
+  $('#blocker').hidden = false;
+}
+async function api(path, opts) {
+  const r = await fetch(path, opts);
+  const data = await r.json().catch(() => ({}));
+  if (r.status === 401) {                       // 초대 없음 / 시간 종료 / 취소됨
+    showBlocker(data.error || '이용할 수 없어요.');
+    throw new Error(data.error || '이용할 수 없어요.');
+  }
+  if (!r.ok) throw new Error(data.error || `요청에 실패했어요 (${r.status})`);
+  return data;
+}
+function fmtDur(sec) {
+  sec = Math.round(sec || 0);
+  const h = Math.floor(sec / 3600), m = Math.floor(sec % 3600 / 60), s = sec % 60;
+  return h ? `${h}시간 ${m}분` : m ? `${m}분 ${s}초` : `${s}초`;
+}
+
+// ---------- 상태 점검 ----------
+async function loadStatus() {
+  const s = await api('/api/status');
+  const box = $('#warnings'); box.replaceChildren();
+  const add = (cls, text) => box.append(el('div', { class: 'notice ' + cls }, text));
+  if (!s.api_key) add('bad', 'API 키가 없어요. 폴더의 .env 파일에 ANTHROPIC_API_KEY를 넣고 앱을 다시 켜 주세요.');
+  if (!s.ffmpeg) add('bad', 'ffmpeg가 설치되어 있지 않아요. 녹화 파일을 처리하려면 필요해요 (README 참고).');
+  if (!s.whisper) add('warn', '음성 인식 패키지(faster-whisper)가 없어요. "pip install -r requirements.txt"를 실행해 주세요. (유튜브 자막 가져오기만 쓸 땐 괜찮아요)');
+  if (!s.captions && !s.yt_dlp) add('warn', '유튜브 관련 패키지가 없어요. "pip install -r requirements.txt"를 실행해 주세요.');
+}
+
+// ---------- 탭 ----------
+function setTab(which) {
+  const file = which === 'file';
+  $('#tab-file').setAttribute('aria-selected', file);
+  $('#tab-yt').setAttribute('aria-selected', !file);
+  $('#pane-file').hidden = !file;
+  $('#pane-yt').hidden = file;
+}
+$('#tab-file').onclick = () => setTab('file');
+$('#tab-yt').onclick = () => setTab('yt');
+
+// ---------- 파일 선택 ----------
+let pickedFile = null;
+const drop = $('#drop'), fileInput = $('#file');
+function pick(f) {
+  pickedFile = f || null;
+  $('#fileName').textContent = f ? `선택됨: ${f.name} (${(f.size / 1048576).toFixed(0)}MB)` : '';
+}
+drop.onclick = () => fileInput.click();
+drop.onkeydown = (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); fileInput.click(); } };
+fileInput.onchange = () => pick(fileInput.files[0]);
+['dragenter', 'dragover'].forEach(n => drop.addEventListener(n, e => { e.preventDefault(); drop.classList.add('over'); }));
+['dragleave', 'drop'].forEach(n => drop.addEventListener(n, e => { e.preventDefault(); drop.classList.remove('over'); }));
+drop.addEventListener('drop', e => { if (e.dataTransfer.files[0]) pick(e.dataTransfer.files[0]); });
+
+// ---------- 영상 추가 ----------
+function showProgress(msg, frac) {
+  $('#progress').hidden = false;
+  $('#progressMsg').textContent = msg;
+  $('#progressBar').style.width = Math.round(Math.max(0, Math.min(1, frac)) * 100) + '%';
+}
+function uploadFile(file, title, language) {
+  return new Promise((resolve, reject) => {
+    const fd = new FormData();
+    fd.append('file', file); fd.append('title', title); fd.append('language', language);
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', '/api/videos/upload');
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable) showProgress(`파일 올리는 중... ${Math.round(e.loaded / e.total * 100)}%`, 0);
+    };
+    xhr.onload = () => {
+      let d = {}; try { d = JSON.parse(xhr.responseText); } catch {}
+      if (xhr.status === 401) showBlocker(d.error || '이용할 수 없어요.');
+      xhr.status === 200 ? resolve(d.job_id) : reject(new Error(d.error || `업로드에 실패했어요 (${xhr.status})`));
+    };
+    xhr.onerror = () => reject(new Error('업로드 중 연결이 끊겼어요.'));
+    xhr.send(fd);
+  });
+}
+function pollJob(jobId) {
+  return new Promise((resolve, reject) => {
+    const tick = async () => {
+      try {
+        const j = await api('/api/jobs/' + jobId);
+        if (j.status === 'error') return reject(new Error(j.error || '처리에 실패했어요.'));
+        showProgress(j.message, j.progress);
+        if (j.status === 'done') return resolve(j.video_id);
+        setTimeout(tick, 1000);
+      } catch (e) { reject(e); }
+    };
+    tick();
+  });
+}
+$('#addBtn').onclick = async () => {
+  const btn = $('#addBtn'), err = $('#addError');
+  err.hidden = true;
+  const language = $('#lang').value;
+  try {
+    let jobId;
+    if (!$('#pane-file').hidden) {
+      if (!pickedFile) throw new Error('영상 파일을 먼저 선택해 주세요.');
+      btn.disabled = true;
+      showProgress('파일 올리는 중...', 0);
+      jobId = await uploadFile(pickedFile, $('#fileTitle').value.trim(), language);
+    } else {
+      const url = $('#ytUrl').value.trim();
+      if (!url) throw new Error('유튜브 주소를 입력해 주세요.');
+      btn.disabled = true;
+      showProgress('요청하는 중...', 0);
+      jobId = (await api('/api/videos/youtube', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url, language, force_asr: $('#forceAsr').checked }),
+      })).job_id;
+    }
+    const vid = await pollJob(jobId);
+    const sel = loadSel(); sel.add(vid); saveSel(sel);
+    if (invPick) invPick.add(vid);
+    showProgress('완료! 아래 목록에 추가됐어요.', 1);
+    pick(null); fileInput.value = ''; $('#fileTitle').value = ''; $('#ytUrl').value = '';
+    await loadVideos();
+  } catch (e) {
+    $('#progress').hidden = true;
+    err.textContent = e.message; err.hidden = false;
+  } finally { btn.disabled = false; }
+};
+
+// ---------- 영상 목록 ----------
+const loadSel = () => new Set(JSON.parse(localStorage.getItem('selVideos') || '[]'));
+const saveSel = (s) => localStorage.setItem('selVideos', JSON.stringify([...s]));
+let invPick = null;  // 친구 초대에서 체크된 영상 id (관리자 전용)
+function renderInvPicker(videos) {
+  const box = $('#invVideos'); box.replaceChildren();
+  if (!videos.length) { box.append(el('div', { class: 'empty', style: 'padding:8px 0' }, '위에서 영상을 먼저 넣어 주세요.')); return; }
+  if (invPick === null) invPick = new Set(loadSel());
+  const valid = new Set(videos.map(v => v.id));
+  for (const id of [...invPick]) if (!valid.has(id)) invPick.delete(id);
+  for (const v of videos) {
+    const cb = el('input', { type: 'checkbox' });
+    cb.checked = invPick.has(v.id);
+    cb.onchange = () => { cb.checked ? invPick.add(v.id) : invPick.delete(v.id); };
+    box.append(el('label', {}, cb, `${v.title} (${fmtDur(v.duration)})`));
+  }
+}
+async function loadVideos() {
+  const { videos } = await api('/api/videos');
+  const guest = !!ME && ME.role === 'guest';
+  if (!guest) renderInvPicker(videos);
+  const box = $('#videos'); box.replaceChildren();
+  if (!videos.length) { box.append(el('div', { class: 'empty' }, guest ? '공유된 영상이 없어요.' : '아직 넣은 영상이 없어요.')); return; }
+  const sel = loadSel();
+  const valid = new Set(videos.map(v => v.id));
+  for (const id of [...sel]) if (!valid.has(id)) sel.delete(id);
+  if (guest && sel.size === 0) for (const v of videos) sel.add(v.id);   // 친구는 처음에 전부 선택된 상태
+  saveSel(sel);
+  for (const v of videos) {
+    const cb = el('input', { type: 'checkbox', 'aria-label': v.title + ' 선택' });
+    cb.checked = sel.has(v.id);
+    cb.onchange = () => { const s = loadSel(); cb.checked ? s.add(v.id) : s.delete(v.id); saveSel(s); };
+    const scriptBox = el('div', { hidden: '' });
+    const actions = el('div', {});
+    if (!guest) {   // 스크립트 보기·삭제는 영상 주인(나)만
+      const viewBtn = el('button', { class: 'ghost' }, '스크립트 보기');
+      viewBtn.onclick = async () => {
+        if (!scriptBox.hidden) { scriptBox.hidden = true; viewBtn.textContent = '스크립트 보기'; return; }
+        if (!scriptBox.firstChild) {
+          const d = await api('/api/videos/' + v.id);
+          scriptBox.append(el('pre', { class: 'script' }, d.text));
+        }
+        scriptBox.hidden = false; viewBtn.textContent = '스크립트 닫기';
+      };
+      const delBtn = el('button', { class: 'ghost' }, '삭제');
+      delBtn.onclick = async () => {
+        if (!confirm(`"${v.title}" 영상을 목록에서 지울까요? 친구에게 공유된 것도 함께 사라져요.`)) return;
+        await api('/api/videos/' + v.id, { method: 'DELETE' });
+        loadVideos();
+      };
+      actions.append(viewBtn, delBtn);
+    }
+    const meta = guest
+      ? `${fmtDur(v.duration)} · 공유받은 영상`
+      : `${fmtDur(v.duration)} · ${v.method === 'captions' ? '유튜브 자막' : '음성 인식'} · ${v.chars.toLocaleString()}자`;
+    box.append(el('div', { class: 'vid' }, cb,
+      el('div', { class: 'grow' },
+        el('div', { class: 't' }, v.title),
+        el('div', { class: 'm' }, meta),
+        scriptBox),
+      actions));
+  }
+}
+
+// ---------- 문제 풀기 ----------
+const SOURCE = {
+  video: ['영상에 나온 내용', ''],
+  inferred: ['영상 내용에서 추론', ''],
+  not_in_video: ['영상에서 근거를 못 찾음 · 일반 지식 추정', 'warn'],
+};
+const CONF = { high: '확신 높음', medium: '확신 보통', low: '확신 낮음 · 직접 확인 권장' };
+
+function renderAnswer(a) {
+  const [srcText, srcCls] = SOURCE[a.source] || ['', ''];
+  const ev = (a.evidence || []).map(e => el('div', { class: 'ev' },
+    el('span', { class: 'time' }, e.time || ''),
+    e.quote || '',
+    e.video ? el('div', { class: 'vt' }, e.video) : null));
+  return el('div', { class: 'card ans' },
+    el('div', { class: 'lab' }, a.label || ''),
+    a.question ? el('div', { class: 'q' }, a.question) : null,
+    el('div', { class: 'a' }, a.answer || ''),
+    el('div', { class: 'tags' },
+      srcText ? el('span', { class: 'tag ' + srcCls }, srcText) : null,
+      el('span', { class: 'tag ' + (a.confidence === 'low' ? 'warn' : '') }, CONF[a.confidence] || '')),
+    ev,
+    a.reasoning ? el('div', { class: 'why' }, a.reasoning) : null);
+}
+$('#askBtn').onclick = async () => {
+  const btn = $('#askBtn'), err = $('#askError'), out = $('#results');
+  err.hidden = true;
+  const question = $('#quiz').value.trim();
+  const ids = [...loadSel()];
+  if (!question) { err.textContent = '문제를 붙여넣어 주세요.'; err.hidden = false; return; }
+  if (!ids.length) { err.textContent = '목록에서 근거로 쓸 영상을 하나 이상 체크해 주세요.'; err.hidden = false; return; }
+  btn.disabled = true; btn.textContent = '영상 내용에서 찾는 중...';
+  try {
+    const d = await api('/api/answer', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ question, video_ids: ids }),
+    });
+    out.replaceChildren(...d.answers.map(renderAnswer));
+    out.firstChild?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  } catch (e) {
+    err.textContent = e.message; err.hidden = false;
+  } finally { btn.disabled = false; btn.textContent = '정답 찾기'; refreshMe(); }
+};
+$('#quiz').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) $('#askBtn').click();
+});
+
+// ---------- 친구(게스트) 화면 ----------
+let remain = 0;
+const mmss = (s) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+function renderGuestBar() {
+  const bar = $('#guestBar');
+  bar.hidden = false;
+  bar.classList.toggle('low', remain <= 300);
+  bar.replaceChildren(
+    el('span', {}, '친구 이용 중'),
+    el('span', {}, '남은 시간 ', el('b', {}, mmss(remain))),
+    el('span', {}, `질문 ${ME.remaining_questions}회 남음`));
+}
+async function refreshMe() {
+  if (!ME || ME.role !== 'guest') return;
+  try { ME = await api('/api/me'); remain = ME.remaining_seconds; renderGuestBar(); } catch {}
+}
+function initGuest() {
+  remain = ME.remaining_seconds;
+  renderGuestBar();
+  $('#addCard').hidden = true;                       // 친구는 영상을 올릴 수 없다
+  $('#sub').textContent = '공유받은 영상 속 내용을 근거로, 붙여넣은 문제의 정답을 찾아줘요.';
+  $('#hVideos').textContent = '1. 공유받은 영상';
+  $('#hQuiz').textContent = '2. 문제 붙여넣기';
+  const note = $('#guestNote');
+  note.hidden = false;
+  note.textContent =
+    '친구가 공유해 준 영상을 바탕으로 정답을 찾아줘요. 붙여넣은 문제는 정답을 찾기 위해 AI(Claude)로 전송돼요. ' +
+    '정답은 참고용이니, 확신도가 낮으면 직접 확인하세요.';
+  countdownTimer = setInterval(() => {
+    remain -= 1;
+    if (remain <= 0) showBlocker('이용 시간이 끝났어요. 이용해 줘서 고마워요!');
+    else renderGuestBar();
+  }, 1000);
+}
+
+// ---------- 관리자: 친구 초대 ----------
+let INFO = null, urlFilled = false;
+const STATUS_LABEL = {
+  waiting: ['대기 중', 'wait'], active: ['이용 중', 'on'], expired: ['종료', ''], revoked: ['취소됨', ''],
+};
+async function refreshInvites() {
+  INFO = await api('/api/admin/info');
+  const pu = $('#publicUrl');
+  if (INFO.public_url) {
+    pu.value = INFO.public_url; pu.readOnly = true;
+    $('#shareHint').textContent = '공유 터널이 켜져 있어요. 이 주소로 친구가 들어와요.';
+  } else if (!urlFilled) {
+    pu.value = localStorage.getItem('publicUrl') || '';
+    $('#shareHint').textContent = '터미널에서 "python app.py --share"로 켜면 주소가 자동으로 채워져요. 다른 터널(ngrok 등)을 쓴다면 그 주소를 붙여넣으세요.';
+  }
+  urlFilled = true;
+  const box = $('#inviteList'); box.replaceChildren();
+  if (!INFO.invites.length) { box.append(el('div', { class: 'empty' }, '아직 만든 초대가 없어요.')); return; }
+  for (const i of INFO.invites) {
+    const [label, cls] = STATUS_LABEL[i.status];
+    let when = '';
+    if (i.status === 'active') when = ` · 남은 ${mmss(i.remaining_seconds)}`;
+    if (i.status === 'waiting') when = ` · ${Math.ceil(i.claim_remaining_seconds / 3600)}시간 안에 열어야 해요`;
+    const cancel = (i.status === 'waiting' || i.status === 'active')
+      ? el('button', { class: 'ghost', onclick: async () => {
+          if (!confirm(`"${i.label || '이름 없음'}" 초대를 취소할까요? 친구는 바로 쓸 수 없게 돼요.`)) return;
+          await api('/api/admin/invites/' + i.id, { method: 'DELETE' }); refreshInvites();
+        } }, '취소')
+      : null;
+    box.append(el('div', { class: 'inv' },
+      el('div', { class: 'grow' },
+        el('div', { class: 't' }, i.label || '이름 없음'),
+        el('div', { class: 'm' }, `${i.minutes}분 · 질문 ${i.used_questions}/${i.max_questions} · 공유 영상 ${i.video_count}개${when}`)),
+      el('span', { class: 'pill ' + cls }, label), cancel));
+  }
+}
+function initInvites() {
+  $('#inviteCard').hidden = false;
+  refreshInvites().catch(() => {});
+  setInterval(() => refreshInvites().catch(() => {}), 10000);
+  $('#inviteBtn').onclick = async () => {
+    const err = $('#inviteError'); err.hidden = true;
+    const base = ((INFO && INFO.public_url) || $('#publicUrl').value.trim()).replace(/\/+$/, '');
+    if (!/^https?:\/\/[^/]+\./.test(base)) {
+      err.textContent = '친구가 접속할 공개 주소가 필요해요. 터미널에서 "python app.py --share"로 켜거나, 위 칸에 터널 주소를 붙여넣어 주세요.';
+      err.hidden = false; return;
+    }
+    const video_ids = [...(invPick || [])];
+    if (!video_ids.length) {
+      err.textContent = '친구가 문제를 풀 때 쓸 영상을 하나 이상 골라 주세요.';
+      err.hidden = false; return;
+    }
+    if (!(INFO && INFO.public_url)) localStorage.setItem('publicUrl', base);
+    try {
+      const d = await api('/api/admin/invites', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          label: $('#invLabel').value.trim(), minutes: +$('#invMin').value,
+          max_questions: +$('#invQ').value, video_ids,
+        }),
+      });
+      const inv = d.invite;
+      $('#inviteMsg').value =
+        `영상 퀴즈 도우미 초대 링크예요.\n` +
+        `링크는 한 번만 열 수 있고, 열어서 "시작하기"를 누르면 ${inv.minutes}분 동안 쓸 수 있어요. (질문 ${inv.max_questions}회, 공유 영상 ${inv.video_count}개)\n` +
+        `${base}${d.path}`;
+      $('#inviteResult').hidden = false;
+      $('#invLabel').value = '';
+      refreshInvites();
+    } catch (e) { err.textContent = e.message; err.hidden = false; }
+  };
+  $('#copyBtn').onclick = async () => {
+    const ta = $('#inviteMsg');
+    try { await navigator.clipboard.writeText(ta.value); $('#copyBtn').textContent = '복사됐어요!'; }
+    catch { ta.select(); $('#copyBtn').textContent = '선택됐어요. Ctrl+C로 복사하세요'; }
+    setTimeout(() => { $('#copyBtn').textContent = '복사하기'; }, 2500);
+  };
+}
+
+// ---------- 시작 ----------
+(async function boot() {
+  try { ME = await api('/api/me'); } catch { return; }   // 401 이면 api()가 안내 화면을 띄운다
+  if (ME.role === 'admin') { loadStatus().catch(() => {}); initInvites(); }
+  else initGuest();
+  loadVideos().catch(() => {});
+})();
+</script>
+</body>
+</html>
