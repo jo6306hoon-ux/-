@@ -1,3 +1,13 @@
+---
+title: 영상 퀴즈 도우미
+emoji: 🎬
+colorFrom: green
+colorTo: gray
+sdk: docker
+app_port: 7860
+pinned: false
+---
+
 # 영상 퀴즈 도우미
 
 영상(화면 녹화 파일 또는 유튜브 링크)을 넣으면 소리를 글로 바꿔 저장하고,
@@ -45,6 +55,40 @@ python app.py
 - **근거 시각과 인용** — 영상의 몇 분 몇 초에서 나온 말인지
 - **출처 표시** — 영상에 직접 나옴 / 영상에서 추론 / 영상에서 근거를 못 찾음(이때는 일반 지식으로 추정한 것이라고 따로 표시)
 - **확신도** — 낮음이면 해당 시각을 직접 확인해 보세요
+
+## 웹사이트로 올리기 (Hugging Face Spaces, 무료)
+
+내 컴퓨터를 켜 두지 않아도 되는 **인터넷 주소(https://○○○.hf.space)** 가 생겨요.
+녹화 파일을 그 사이트에 올리면 서버가 소리를 글로 바꾸고, 문제를 붙여넣으면 정답을 찾아줘요.
+무료 서버(CPU 2개·메모리 16GB)에서도 `small` 음성 인식 모델이 돌아가요.
+
+1. https://huggingface.co 에 가입하고 오른쪽 위 **New → Space** 를 눌러요.
+   - Space name: 아무거나 (예: `video-quiz`)
+   - **SDK: Docker** → **Blank** 선택
+   - Hardware: **CPU basic (무료)**
+   - 공개 여부: **Public** (친구가 초대 링크로 들어오려면 Public이어야 해요. 관리자 기능은 비밀번호로 막혀 있어요)
+2. 만든 Space의 **Files → Add file → Upload files** 에서 이 폴더의 파일을 전부 올려요.
+   (`app.py`, `Dockerfile`, `requirements.txt`, `README.md`, `.dockerignore`, `static/index.html`
+   — `static` 폴더째 끌어다 놓으면 돼요. `.env` 파일은 **올리지 마세요**.)
+3. Space의 **Settings → Variables and secrets → New secret** 에서 두 개를 추가해요.
+   - `ANTHROPIC_API_KEY` = 내 API 키
+   - `ADMIN_PASSWORD` = 관리자 로그인 비밀번호 (길고 추측하기 어렵게)
+4. 몇 분 기다리면 빌드가 끝나요 (처음엔 음성 인식 모델을 받느라 5~10분). 상태가 **Running** 이 되면
+   Space 화면 오른쪽 위 **⋮ → Embed this Space** 에 나오는 **Direct URL**(`https://○○○.hf.space`)로 들어가세요.
+   이 주소로 들어가야 로그인이 잘 유지돼요.
+5. `https://○○○.hf.space/login` 에서 비밀번호로 로그인하면 영상 올리기·친구 초대를 다 쓸 수 있어요.
+   친구 초대의 '공개 주소' 칸은 자동으로 채워져요.
+
+### 서버에 올렸을 때 알아둘 점
+
+- **무료 Space는 저장 공간이 임시예요.** Space가 다시 시작되면(설정 변경, 48시간 동안 아무도 안 쓰면 잠듦 등)
+  분석해 둔 스크립트와 초대 목록이 사라져요. 오래 보관하려면 Settings에서 **Persistent storage**(유료)를 켜고
+  Variables에 `DATA_DIR=/data` 를 추가하세요.
+- 잠든 Space는 누군가 접속하면 다시 깨어나는데 1~2분 걸려요.
+- 음성 인식은 CPU로 하니 **영상 길이의 절반~1배 정도** 걸려요. 영상이 크면 올리는 시간도 걸리니,
+  가능하면 소리만 담긴 파일(m4a, mp3)로 올리면 빨라요.
+- 녹화 파일은 분석하는 동안만 서버에 잠깐 저장되고, 끝나면 지워요. 스크립트 글은 서버에 남아요.
+- 유튜브 링크는 서버에서 막히는 경우가 많아요. 녹화 파일로 올리는 걸 권해요.
 
 ## 친구에게 공유하기 (1회용 · 시간 제한)
 

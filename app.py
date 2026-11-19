@@ -31,11 +31,6 @@ from flask import Flask, g, jsonify, make_response, redirect, request, send_from
 from werkzeug.exceptions import RequestEntityTooLarge
 
 BASE = Path(__file__).resolve().parent
-DATA = BASE / "data"
-VIDEOS = DATA / "videos"
-TMP = DATA / "tmp"
-for d in (VIDEOS, TMP):
-    d.mkdir(parents=True, exist_ok=True)
 
 
 def load_env_file():
@@ -52,6 +47,12 @@ def load_env_file():
 
 
 load_env_file()
+
+DATA = Path(os.environ.get("DATA_DIR") or (BASE / "data"))
+VIDEOS = DATA / "videos"
+TMP = DATA / "tmp"
+for d in (VIDEOS, TMP):
+    d.mkdir(parents=True, exist_ok=True)
 
 app = Flask(__name__, static_folder=str(BASE / "static"), static_url_path="/static")
 app.config["MAX_CONTENT_LENGTH"] = 4 * 1024 * 1024 * 1024  # 업로드 최대 4GB
@@ -455,7 +456,74 @@ _FORWARD_HEADERS = ("X-Forwarded-For", "X-Forwarded-Host", "X-Forwarded-Proto", 
                     "X-Real-Ip", "Cf-Connecting-Ip", "Cf-Ray", "True-Client-Ip", "Via")
 
 
+# --- 관리자 비밀번호 로그인 (서버에 올렸을 때) ---------------------------------
+# ADMIN_PASSWORD 가 설정되어 있으면 /login 에서 비밀번호로 관리자 쿠키를 받는다.
+ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "").strip()
+ADMIN_COOKIE_DAYS = 14
+_ADMIN_KEY = hashlib.sha256(("vq-admin-cookie:" + ADMIN_PASSWORD).encode()).digest()
+_LOGIN_FAILS = {}  # ip -> [실패 시각...]
+_LOGIN_LOCK = threading.Lock()
+
+
+def _admin_sig(ts):
+    return hmac.new(_ADMIN_KEY, str(ts).encode(), hashlib.sha256).hexdigest()
+
+
+def make_admin_cookie():
+    ts = int(time.time())
+    return f"{ts}.{_admin_sig(ts)}"
+
+
+def admin_cookie_ok(c):
+    if not ADMIN_PASSWORD or "." not in (c or ""):
+        return False
+    ts, sig = c.split(".", 1)
+    if not ts.isdigit() or time.time() - int(ts) > ADMIN_COOKIE_DAYS * 86400:
+        return False
+    return hmac.compare_digest(sig, _admin_sig(int(ts)))
+
+
+def client_ip():
+    fwd = request.headers.get("X-Forwarded-For", "")
+    return (fwd.split(",")[0].strip() if fwd else request.remote_addr) or "?"
+
+
+def login_allowed(ip):
+    """같은 곳에서 15분에 10번 넘게 틀리면 잠시 막는다."""
+    now = time.time()
+    with _LOGIN_LOCK:
+        fails = [t for t in _LOGIN_FAILS.get(ip, []) if now - t < 900]
+        _LOGIN_FAILS[ip] = fails
+        return len(fails) < 10
+
+
+def login_failed(ip):
+    with _LOGIN_LOCK:
+        _LOGIN_FAILS.setdefault(ip, []).append(time.time())
+
+
+def is_https():
+    return request.headers.get("X-Forwarded-Proto", request.scheme) == "https"
+
+
+def set_session_cookie(resp, name, value, max_age):
+    # https(서버)에서는 SameSite=None 으로 두어 Hugging Face 페이지 안(iframe)에서도 로그인이 유지되게 한다.
+    https = is_https()
+    resp.set_cookie(name, value, max_age=max_age, httponly=True,
+                    samesite="None" if https else "Lax", secure=https)
+
+
+def request_public_url():
+    """서버에 올렸을 때, 지금 접속한 공개 주소(https://xxx.hf.space)를 알아낸다."""
+    host = (request.headers.get("X-Forwarded-Host") or request.host or "").split(",")[0].strip()
+    if not host or host.split(":")[0] in ("127.0.0.1", "localhost", "0.0.0.0", "[::1]"):
+        return ""
+    return f"{'https' if is_https() else 'http'}://{host}"
+
+
 def is_admin_request():
+    if admin_cookie_ok(request.cookies.get("vq_admin", "")):
+        return True
     if request.remote_addr not in ("127.0.0.1", "::1"):
         return False
     host = request.host.rsplit(":", 1)[0].strip("[]").lower() if not request.host.startswith("[") else "::1"
@@ -686,7 +754,7 @@ def ask_claude(videos, quiz):
 # --------------------------------------------------------------------------
 # 라우트
 # --------------------------------------------------------------------------
-OPEN_PATHS = ("/static/", "/join/")
+OPEN_PATHS = ("/static/", "/join/", "/login", "/logout")
 GUEST_ALLOWED = {("GET", "/api/me"), ("GET", "/api/videos"), ("POST", "/api/answer")}
 
 
@@ -695,7 +763,8 @@ def gate():
     # 다른 사이트가 몰래 보내는 요청 차단: Origin 이 있으면 우리 주소와 같아야 한다.
     if request.method not in ("GET", "HEAD", "OPTIONS"):
         origin = request.headers.get("Origin")
-        if origin and urlparse(origin).netloc != request.host:
+        hosts = {request.host, (request.headers.get("X-Forwarded-Host") or "").split(",")[0].strip()}
+        if origin and urlparse(origin).netloc not in hosts:
             return jsonify(error="허용되지 않은 요청이에요."), 403
 
     p = request.path
@@ -708,7 +777,7 @@ def gate():
     else:
         rec, why = guest_from_cookie()
         if not rec:
-            return jsonify(error=REASON_TEXT[why], reason=why), 401
+            return jsonify(error=REASON_TEXT[why], reason=why, admin_login=bool(ADMIN_PASSWORD)), 401
         g.role, g.owner, g.invite = "guest", rec["id"], rec
     # 친구는 '공유된 영상 목록 보기'와 '질문하기'만 가능. 업로드·삭제·스크립트 보기·초대 관리는 모두 막는다.
     if g.role == "guest" and (request.method, p) not in GUEST_ALLOWED:
@@ -729,7 +798,8 @@ def favicon():
 @app.get("/api/me")
 def me():
     if g.role == "admin":
-        return jsonify(role="admin", public_url=PUBLIC["url"])
+        return jsonify(role="admin", public_url=PUBLIC["url"] or request_public_url(),
+                       can_logout=admin_cookie_ok(request.cookies.get("vq_admin", "")))
     info = invite_public(g.invite)
     info.pop("label", None)
     info.pop("id", None)
@@ -871,7 +941,7 @@ def _clamp(v, lo, hi, default):
 @app.get("/api/admin/info")
 def admin_info():
     recs = sorted(inv_load().values(), key=lambda r: -r["created"])
-    return jsonify(public_url=PUBLIC["url"], invites=[invite_public(r) for r in recs])
+    return jsonify(public_url=PUBLIC["url"] or request_public_url(), invites=[invite_public(r) for r in recs])
 
 
 @app.post("/api/admin/invites")
@@ -966,10 +1036,48 @@ def join_claim(token):
         r.update(claimed_at=now, expires_at=now + r["duration"], session_hash=_h(secret))
         inv_save(d)
     resp = redirect("/", code=303)
-    resp.set_cookie(
-        "vq_guest", f"{r['id']}.{secret}", max_age=int(r["duration"]) + 3600,
-        httponly=True, samesite="Lax", secure=request.headers.get("X-Forwarded-Proto") == "https",
-    )
+    set_session_cookie(resp, "vq_guest", f"{r['id']}.{secret}", int(r["duration"]) + 3600)
+    return resp
+
+
+# --- 관리자 로그인 ---------------------------------------------------------
+LOGIN_FORM = (
+    '<form method="post" action="/login">'
+    '<input type="password" name="password" autocomplete="current-password" required autofocus '
+    'placeholder="관리자 비밀번호" style="width:100%;font:inherit;padding:10px 12px;border:1px solid #e4e1da;border-radius:8px">'
+    "<button>로그인</button></form>"
+)
+
+
+@app.get("/login")
+def login_page():
+    if not ADMIN_PASSWORD:
+        return simple_page("로그인을 쓸 수 없어요",
+                           "<p>서버에 <b>ADMIN_PASSWORD</b>가 설정되어 있지 않아요. "
+                           "Hugging Face Space의 Settings → Secrets에 추가한 뒤 다시 시작해 주세요.</p>", 503)
+    return simple_page("관리자 로그인", "<p class=\"s\">영상을 올리고 친구를 초대하는 사람만 로그인해요.</p>" + LOGIN_FORM)
+
+
+@app.post("/login")
+def login_submit():
+    if not ADMIN_PASSWORD:
+        return redirect("/login", code=303)
+    ip = client_ip()
+    if not login_allowed(ip):
+        return simple_page("잠시 후 다시 시도해 주세요", "<p>비밀번호를 여러 번 틀렸어요. 15분 뒤에 다시 시도해 주세요.</p>", 429)
+    pw = request.form.get("password", "")
+    if not hmac.compare_digest(pw.encode(), ADMIN_PASSWORD.encode()):
+        login_failed(ip)
+        return simple_page("관리자 로그인", '<p style="color:#a3321f">비밀번호가 맞지 않아요.</p>' + LOGIN_FORM, 401)
+    resp = redirect("/", code=303)
+    set_session_cookie(resp, "vq_admin", make_admin_cookie(), ADMIN_COOKIE_DAYS * 86400)
+    return resp
+
+
+@app.post("/logout")
+def logout():
+    resp = redirect("/login" if ADMIN_PASSWORD else "/", code=303)
+    resp.delete_cookie("vq_admin")
     return resp
 
 
@@ -1009,4 +1117,10 @@ if __name__ == "__main__":
     print(f"\n영상 퀴즈 도우미가 켜졌어요 → {url}\n(끄려면 이 창에서 Ctrl+C)\n")
     if os.environ.get("NO_BROWSER") != "1":
         threading.Timer(1.0, lambda: webbrowser.open(url)).start()
-    app.run(host=host, port=port, threaded=True)
+    if have_module("waitress"):
+        from waitress import serve
+
+        serve(app, host=host, port=port, threads=8,
+              max_request_body_size=app.config["MAX_CONTENT_LENGTH"], channel_timeout=600)
+    else:
+        app.run(host=host, port=port, threaded=True)
